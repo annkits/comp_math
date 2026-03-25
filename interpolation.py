@@ -8,28 +8,43 @@ import math
 def read_data(filename="input_interpolation.txt"):
     try:
         with open(filename, 'r', encoding='utf-8') as f:
-            n = int(f.readline().strip())
-            x_nodes = list(map(float, f.readline().strip().split()))
-            y_nodes = list(map(float, f.readline().strip().split()))
-            x_target = float(f.readline().strip())
-            func_str = f.readline().strip()
+            lines = f.readlines()
+
+        data_lines = [line.strip() for line in lines if line.strip() and not line.strip().startswith('#')]
+
+        if len(data_lines) < 5:
+            raise ValueError("Недостаточно данных в файле")
+
+        n        = int(data_lines[0])
+        x0       = float(data_lines[1])
+        h        = float(data_lines[2])
+        x_target = float(data_lines[3])
+        func_str = data_lines[4]
+
+        x_nodes = [x0 + i * h for i in range(n + 1)]
 
         def target_func(x):
             safe_dict = {
                 "math": math,
-                "sin": math.sin,
-                "cos": math.cos,
-                "exp": math.exp,
-                "sqrt": math.sqrt,
-                "x": x
+                "sin": math.sin, "cos": math.cos,
+                "exp": math.exp, "sqrt": math.sqrt,
+                "x": x, "pi": math.pi, "e": math.e,
+                "log": math.log, "log10": math.log10,
             }
-            return eval(func_str.replace('^', '**'), {"__builtins__": None}, safe_dict)
+            expr = func_str.replace('^', '**')
+            return eval(expr, {"__builtins__": None}, safe_dict)
+
+        y_nodes = [target_func(xi) for xi in x_nodes]
 
         return n, x_nodes, y_nodes, x_target, target_func, func_str
 
     except Exception as e:
-        print(f"Ошибка чтения: {e}")
-        return 4, [1.0, 2.0, 3.0, 4.0], [1.0, 0.5, 0.33, 0.25], 2.5, lambda x: 1 / x
+        print(f"Ошибка чтения/вычисления: {e}")
+        n_def = 10
+        x0_def, h_def = 1.0, 1.0
+        x_nodes = [x0_def + i * h_def for i in range(n_def + 1)]
+        y_nodes = [math.sqrt(x) for x in x_nodes]
+        return n_def, x_nodes, y_nodes, 2.5, lambda x: math.sqrt(x), "sqrt(x)"
 
 def get_differences(y_nodes, verbose=False):
     n = len(y_nodes)
@@ -141,42 +156,42 @@ def aitken_interpolation(x_nodes, y_nodes, x):
     return p[0]
 
 
-def plot_interpolation(x_nodes, y_nodes, x_target, res_lagrange, res_newton1, res_newton2):
-    x_fine = np.linspace(min(x_nodes) - 0.5, max(x_nodes) + 0.5, 500)
+def plot_interpolation(x_nodes, y_nodes, x_target, res_l, res_n1, res_n2, target_func):
+    x_min, x_max = min(x_nodes), max(x_nodes)
+    data_range = x_max - x_min
 
-    y_true = 1 / x_fine
-    y_lagrange = [lagrange_interpolation(x_nodes, y_nodes, xi, verbose=False) for xi in x_fine]
-    y_newton = [newton_interpolation1(x_nodes, y_nodes, xi, verbose=False) for xi in x_fine]
+    ext_margin = data_range
+    # x_fine = np.linspace(x_min - ext_margin, x_max + ext_margin, 500)
+    x_fine = np.linspace(0.1, x_max + 1.5, 1000)
 
-    plt.figure(figsize=(12, 7))
-    plt.grid(True, linestyle=':', alpha=0.6)
+    y_true = [target_func(xi) for xi in x_fine]
+    y_poly = [lagrange_interpolation(x_nodes, y_nodes, xi, verbose=False) for xi in x_fine]
 
-    plt.plot(x_fine, y_true, 'g--', label='Истинная функция $f(x)=1/x$', alpha=0.3, linewidth=1)
-    plt.plot(x_fine, y_lagrange, 'b-', label='Многочлен Лагранжа', linewidth=2, alpha=0.6)
-    plt.plot(x_fine, y_newton, 'r:', label='Многочлен Ньютона (1-я форма)', linewidth=2)
+    plt.figure(figsize=(10, 6))
+    plt.grid(True, linestyle=':', alpha=0.7)
 
-    plt.vlines(x_nodes, 0, y_nodes, colors='gray', linestyles='dashed', alpha=0.3)
-    plt.hlines(y_nodes, min(x_nodes) - 0.5, x_nodes, colors='gray', linestyles='dashed', alpha=0.3)
+    plt.plot(x_fine, y_true, 'g--', label='f(x)', alpha=0.4)
+    plt.plot(x_fine, y_poly, 'b-', label='Интерполянт', linewidth=2)
 
-    plt.scatter(x_nodes, y_nodes, color='red', s=50, zorder=5, label='Узлы (данные)')
+    plt.scatter(x_nodes, y_nodes, color='red', zorder=5, label='Узлы')
+    plt.scatter([x_target], [res_l], color='blue', marker='o', s=100,
+                zorder=6, label=f'L(x): {res_l:.4f}')
+    plt.scatter([x_target], [res_n1], color='orange', marker='s', s=80,
+                zorder=7, label=f'N1(x): {res_n1:.4f}')
+    plt.scatter([x_target], [res_n2], color='purple', marker='^', s=80,
+                zorder=7, label=f'N2(x): {res_n2:.4f}')
 
-    plt.scatter([x_target], [res_lagrange], color='blue', marker='o', s=100,
-                zorder=6, label=f'L(x): {res_lagrange:.4f}')
-    plt.scatter([x_target], [res_newton1], color='orange', marker='s', s=80,
-                zorder=7, label=f'N1(x): {res_newton1:.4f}')
-    plt.scatter([x_target], [res_newton2], color='purple', marker='^', s=80,
-                zorder=7, label=f'N2(x): {res_newton2:.4f}')
+    plot_margin = data_range * 0.15
+    plt.xlim(x_min - plot_margin, x_max + plot_margin)
 
-    margin = 0.5
-    plt.xlim(min(x_nodes) - margin, max(x_nodes) + margin)
-    plt.ylim(min(y_nodes) - margin, max(y_nodes) + margin)
-    plt.axhline(0, color='black', linewidth=0.8)
+    y_min, y_max = min(y_nodes), max(y_nodes)
+    y_range = y_max - y_min if y_max != y_min else 1.0
+    plt.ylim(y_min - y_range * 0.15, y_max + y_range * 0.15)
 
-    plt.title('Сравнение методов интерполяции (Лагранж vs Ньютон)')
+    plt.title('График интерполяции')
     plt.xlabel('x')
     plt.ylabel('y')
-    plt.legend(loc='best', fontsize='small')
-
+    plt.legend()
     plt.show()
 
 
@@ -204,7 +219,7 @@ def main():
     y_true_val = target_func(x_target)
     print(f"\nИстинное значение f({x_target}) = {y_true_val:.6f}")
 
-    plot_interpolation(x_nodes, y_nodes, x_target, res_lagrange, res_newton1, res_newton2)
+    plot_interpolation(x_nodes, y_nodes, x_target, res_lagrange, res_newton1, res_newton2, target_func)
 
 
 if __name__ == "__main__":
